@@ -1,0 +1,52 @@
+include:
+  - https://gitlab.com/accessable-net/gitlab-ci-templates/-/raw/master/scheduled_rebase.yml
+
+.compile-base:
+  stage: build
+  image: ubuntu:latest
+  variables:
+    # enforce non-interactive for tzdata etc
+    DEBIAN_FRONTEND: noninteractive
+    # enforce mknod to allow root
+    FORCE_UNSAFE_CONFIGURE: 1
+    PKGN: luci-app-openclash
+  script:
+    - apt-get update -yq
+    - apt-get install -yq gawk libncurses5-dev libz-dev zlib1g-dev git ccache bzip2 make gcc libncurses5-dev libncursesw5-dev wget file
+    - wget https://archive.openwrt.org/snapshots/trunk/$FAMILY/$MODEL/OpenWrt-SDK-${FAMILY}-${MODEL}_gcc-5.3.0_musl-1.1.16.Linux-x86_64.tar.bz2 -O sdk.tar.bz2
+    - tar xjf sdk.tar.bz2
+    - cd OpenWrt-SDK-*/
+    - git clone $CI_REPOSITORY_URL package/luci-app-openclash -b $CI_COMMIT_REF_NAME
+
+    # 编译 po2lmo (如果有po2lmo可跳过)
+    - pushd package/luci-app-openclash/luci-app-openclash/tools/po2lmo
+    - make && make install
+    - popd
+
+    # 选择要编译的包 LuCI -> Applications -> luci-app-openclash
+    - echo "CONFIG_PACKAGE_luci-app-openclash=m" >> .config
+    - make defconfig
+
+    # 开始编译
+    -  make package/${PKGN}/compile -j$(nproc) V=s
+
+  artifacts:
+    paths:
+      - OpenWrt-SDK-*/bin
+
+  cache:
+    paths:
+      # po2lmo
+      - luci-app-openclash/tools/po2lmo/src/po2lmo
+      - luci-app-openclash/tools/po2lmo/src/po2lmo.o
+      - luci-app-openclash/tools/po2lmo/src/template_lmo.o
+      # build cache
+      - OpenWrt-SDK-*/tmp
+      - OpenWrt-SDK-*/build_dir
+      - OpenWrt-SDK-*/staging_dir
+      - OpenWrt-SDK-*/target
+compile-ramips-mt7621:
+  extends: .compile-base
+  variables:
+    FAMILY: ramips
+    MODEL: mt7621
